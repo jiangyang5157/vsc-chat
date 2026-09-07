@@ -56,9 +56,17 @@ file-save, terminal-command, model-call and transcript data:
 | Commits during session | at stop: `git log <startHead>..HEAD` (hash/date/subject) | Which AI work turned into commits |
 | Active-file trace | `window.onDidChangeActiveTextEditor` → `editor_activity` events | What the user was working on in this window, when |
 
-Report surface: new "Session Totals" rows (terminal total duration, chars added/removed,
-commits made), a "Commits Made During Session" section, and the new event types in the
-timeline. JSON sidecar gains `editStats` and `commitsMade`.
+Report surface (v0.4): new "Session Totals" rows (terminal total duration, chars
+added/removed, commits made), a "Commits Made During Session" section, and the new event
+types in the timeline. JSON sidecar gains `editStats` and `commitsMade`.
+
+Report surface (v0.5, "report v2"): a **Session Narrative** replaces the raw timeline as
+the primary view — events are grouped into activity segments separated by idle gaps
+(≥ 10 min), each segment aggregated (files touched, save count, terminal commands, model
+calls, editor switches) so a session reads like a story instead of a row dump. A per-file
+"Text Edits by File" table shows added/removed/net chars. The raw event table is kept in a
+collapsed "Raw Event Timeline" `<details>` for audit. Empty model-call/token sections stay
+hidden, and misleading window-focus events were removed (decision D7).
 
 ### 4.1 Why this answers "efficiency" without tokens
 

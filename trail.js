@@ -1,4 +1,4 @@
-// trail.js — session recorder (v0.4.1)
+// trail.js — session recorder (v0.5.0)
 //
 // Design goal: act like a "recorder" for one AI collaboration session, capturing the
 // observable facts the extension API can see, and exporting an HTML audit report at the end.
@@ -193,7 +193,7 @@ class Recorder {
     }
 
     const data = {
-      generatorVersion: 'vsc-chat-trail v0.4.1',
+      generatorVersion: 'vsc-chat-trail v0.5.0',
       schemaVersion: 'trail-jsonl-1',
       id: this.id,
       startTs: this.startTs,

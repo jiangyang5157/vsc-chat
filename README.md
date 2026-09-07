@@ -58,7 +58,7 @@ vsc-chat/
    → the audit report opens in your browser
 ```
 
-Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / terminal runs + total time / changed files / text edits added-removed / commits / custom model calls) → AI Changes Summary (git) → Commits Made During Session → Timeline (saves, terminal, active-file) → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations (collapsed).
+Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / terminal runs + total time / changed files / text edits added-removed / commits / custom model calls) → **Session Narrative** (activity segments with idle gaps — reads like a story) → Text Edits by File → AI Changes Summary (git) → Commits Made During Session → Raw Event Timeline (collapsed audit view) → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations (collapsed).
 
 Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the artifact, for future scripted session/skill aggregation.
 
@@ -98,5 +98,6 @@ A: Measured or explicitly estimated only: recording duration, file-save count, t
 - [x] v0.3: Removed the validation participants @probe / @asb-runbook; narrowed to a pure Trail tool
 - [x] v0.4: Ambient effect signals — text-edit stats, terminal run duration, commits during session, active-file events
 - [x] v0.4.1: Report cleanup — hide empty model-call/token rows, collapse known limitations, remove misleading window-focus events, readable non-ASCII git paths
+- [x] v0.5: Narrative report ("report v2") — activity segments with idle gaps, per-file text-edit table, raw timeline collapsed into an audit `<details>`
 - [ ] (Backlog, not needed now) Cross-session aggregation analysis by task tag — revisit only if multi-session comparison becomes a goal
 - [ ] (Future) Register a model-calling custom participant (e.g. @asb-review) that reports measured data via `trail.logModelCall`

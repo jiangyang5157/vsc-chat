@@ -86,6 +86,57 @@ function computeSummary(d) {
   };
 }
 
+// --- session narrative (activity segments) ---
+// Turns the raw event list into readable activity bursts: events separated by less than
+// IDLE_GAP_MS belong to one continuous work window and are merged into a segment with
+// aggregated facts. The raw rows stay available in the "Raw Event Timeline" <details>.
+const IDLE_GAP_MS = 10 * 60 * 1000;
+const SEGMENT_TYPES = new Set(['file_saved', 'terminal_cmd', 'model_call', 'editor_activity']);
+
+function fmtOffset(ms) {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const pad = (n) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${pad(m)}:${pad(s)}` : `${m}:${pad(s)}`;
+}
+
+function buildSegments(events) {
+  const work = (events || [])
+    .filter((e) => SEGMENT_TYPES.has(e.type))
+    .slice()
+    .sort((a, b) => (a.ts || 0) - (b.ts || 0));
+  if (work.length === 0) return [];
+  const segs = [];
+  let cur = null;
+  for (const ev of work) {
+    const ts = ev.ts || 0;
+    if (!cur || ts - cur.end > IDLE_GAP_MS) {
+      if (cur) segs.push(cur);
+      cur = { start: ts, end: ts, saves: 0, terminals: [], calls: 0, editorSwitches: 0, files: new Set() };
+    }
+    cur.end = Math.max(cur.end, ts);
+    if (ev.type === 'file_saved') cur.saves++;
+    else if (ev.type === 'terminal_cmd') cur.terminals.push(ev);
+    else if (ev.type === 'model_call') cur.calls++;
+    else if (ev.type === 'editor_activity') cur.editorSwitches++;
+    if (ev.relPath) cur.files.add(ev.relPath);
+  }
+  segs.push(cur);
+  return segs.map((s) => ({
+    start: s.start,
+    end: s.end,
+    saves: s.saves,
+    terminalCount: s.terminals.length,
+    terminalDetail: s.terminals.slice(0, 3).map((c) => String(c.command || '?').slice(0, 90)).join(' | '),
+    calls: s.calls,
+    editorSwitches: s.editorSwitches,
+    files: Array.from(s.files).slice(0, 4),
+    moreFiles: Math.max(0, s.files.size - 4)
+  }));
+}
+
 function buildReport(data) {
   const d = data || {};
   const evs = d.events || [];
@@ -153,6 +204,26 @@ function buildReport(data) {
   const notes = (d.notes || []).map((n) => `<li>${escapeHtml(n)}</li>`).join('\n');
 
   const S = computeSummary(d);
+  const segments = buildSegments(d.events);
+  const editFileRows = (() => {
+    const files = (d.editStats && d.editStats.files) || {};
+    return Object.keys(files)
+      .sort((a, b) => (files[b].added + files[b].removed) - (files[a].added + files[a].removed))
+      .map((rel) => `<tr><td>${escapeHtml(rel)}</td><td>${files[rel].added}</td><td>${files[rel].removed}</td><td>${(files[rel].added - files[rel].removed) >= 0 ? '+' : ''}${files[rel].added - files[rel].removed}</td></tr>`)
+      .join('\n');
+  })();
+  const narrativeHtml = segments.length ? '<h2>Session Narrative (activity segments)</h2>' + segments.map((seg, i) => {
+    const idle = i > 0 ? seg.start - segments[i - 1].end : null;
+    const facts = [];
+    if (seg.files.length) facts.push(`files: ${seg.files.map(escapeHtml).join(', ')}${seg.moreFiles ? ` +${seg.moreFiles} more` : ''}`);
+    if (seg.saves) facts.push(`${seg.saves} file save${seg.saves > 1 ? 's' : ''}`);
+    if (seg.terminalCount) facts.push(`${seg.terminalCount} terminal command${seg.terminalCount > 1 ? 's' : ''}${seg.terminalDetail ? ` — ${escapeHtml(seg.terminalDetail)}` : ''}`);
+    if (seg.calls) facts.push(`${seg.calls} custom model call${seg.calls > 1 ? 's' : ''}`);
+    if (seg.editorSwitches) facts.push(`${seg.editorSwitches} editor switch${seg.editorSwitches > 1 ? 'es' : ''}`);
+    if (!facts.length) facts.push('no recorded events in this segment');
+    const idleNote = idle != null && idle >= IDLE_GAP_MS ? `<p class="gap">… idle ${fmtDur(idle)} before this segment …</p>` : '';
+    return `${idleNote}<h3>▲ ${fmtOffset(seg.start - d.startTs)} → ${fmtOffset(seg.end - d.startTs)} (${fmtDur(seg.end - seg.start)})</h3><p class="seg">${facts.join(' · ')}</p>`;
+  }).join('\n') : '';
   const showModelCalls = S.modelCallTotal > 0;
   const showTranscriptTokens = S.transcriptEstTokens != null;
   const totalsSection = `<h2>Session Totals (everything measurable in this session)</h2>
@@ -181,6 +252,8 @@ ${showModelCalls || showTranscriptTokens ? `<p class="est">* Estimates: transcri
   th{background:#f6f8fa} pre{background:#f6f8fa;padding:.8rem;border-radius:6px;overflow:auto;font-size:.8rem}
   .meta td{font-size:.85rem} .warn{background:#fff8c5;border:1px solid #d4a72c;border-radius:6px;padding:.7rem .9rem;font-size:.85rem;margin:.8rem 0}
   .est{color:#57606a;font-size:.75rem} code{background:#eff1f3;border-radius:3px;padding:0 .2rem}
+  h3{font-size:.95rem;margin:1.1rem 0 .15rem} p.seg{margin:0 0 .4rem;font-size:.85rem;color:#1f2328}
+  p.gap{color:#57606a;font-size:.8rem;font-style:italic;margin:.5rem 0 .1rem}
   details{margin:.4rem 0} summary{cursor:pointer;color:#0969da}
 </style>
 </head>
@@ -207,6 +280,11 @@ This report therefore records <b>observable facts</b>: a timeline (file saves / 
 Token numbers are <b>character-based estimates (*)</b>. Latency and character counts are measured values only when the data comes from a custom participant (marked in the tables).
 </div>
 
+${narrativeHtml}
+
+${editFileRows ? `<h2>Text Edits by File (chars, whole session)</h2>
+<table><tr><th>File</th><th>Added</th><th>Removed</th><th>Net</th></tr>${editFileRows}</table>` : ''}
+
 <h2>AI Changes Summary (full git diff since session-start HEAD)</h2>
 ${d.diffStat ? `<pre>${escapeHtml(d.diffStat)}</pre>` : '<p>(no git or no changes)</p>'}
 ${fileRows || untrackedRows ? `<table><tr><th>Status</th><th>File</th></tr>${fileRows}${untrackedRows}</table>` : ''}
@@ -214,9 +292,12 @@ ${fileRows || untrackedRows ? `<table><tr><th>Status</th><th>File</th></tr>${fil
 <h2>Commits Made During Session</h2>
 ${d.commitsMade == null ? '' : (commitRows ? `<table><tr><th>Time</th><th>Commit</th><th>Message</th></tr>${commitRows}</table>` : '<p>(no commits during the session)</p>')}
 
-<h2>Timeline (session events)</h2>
+<h2>Raw Event Timeline</h2>
+<details>
+<summary>Show all ${evs.length} raw events (audit view)</summary>
 ${rows ? `<table><tr><th>Relative time</th><th>Event</th><th>Details</th></tr>${rows}</table>` : '<p>(empty)</p>'}
 ${d.stats && Object.keys(d.stats.savesByExt || {}).length ? `<details><summary>File saves by extension</summary><table><tr><th>Extension</th><th>Count</th></tr>${saveRows}</table></details>` : ''}
+</details>
 
 ${modelRows ? `<h2>Model Calls by Custom Participants (measured)</h2>
 <table><tr><th>Participant</th><th>Model</th><th>Result</th><th>Latency</th><th>Prompt chars</th><th>Response chars</th><th>Est. tokens *</th></tr>${modelRows}</table><p class="est">* Token figures are character estimates (see rules under "Session Totals"). Real vendor usage is not exposed to extensions; these will be replaced with measured values if it ever becomes available.</p>` : ''}
