@@ -57,7 +57,6 @@ const EVENT_LABELS = {
   terminal_cmd: '⌨️ Terminal command',
   model_call: '🤖 Model call (custom participant)',
   editor_activity: '📌 Active file',
-  window_focus: '🖥️ Window focus',
   transcript: '📄 Transcript snapshot',
   session_end: '■ End recording'
 };
@@ -105,9 +104,6 @@ function buildReport(data) {
         break;
       case 'editor_activity':
         detail = `${ev.relPath || '?'}  (${ev.languageId || ''})`;
-        break;
-      case 'window_focus':
-        detail = ev.focused ? 'window focused' : 'window blurred';
         break;
       case 'model_call': {
         const e = (ev.estTokens != null && ev.estPrompt != null)
@@ -157,6 +153,8 @@ function buildReport(data) {
   const notes = (d.notes || []).map((n) => `<li>${escapeHtml(n)}</li>`).join('\n');
 
   const S = computeSummary(d);
+  const showModelCalls = S.modelCallTotal > 0;
+  const showTranscriptTokens = S.transcriptEstTokens != null;
   const totalsSection = `<h2>Session Totals (everything measurable in this session)</h2>
 <table>
 <tr><th>Duration</th><td>${fmtDur(d.durationMs)}</td></tr>
@@ -165,11 +163,10 @@ function buildReport(data) {
 <tr><th>Files changed (git)</th><td>${S.filesChanged}${S.untracked ? ` (+ ${S.untracked} untracked new files)` : ''}</td></tr>
 <tr><th>Text edits (chars added / removed)</th><td>${S.charsAdded == null ? '(not measured)' : `${S.charsAdded} / ${S.charsRemoved}`}</td></tr>
 <tr><th>Commits made during session</th><td>${S.commits}</td></tr>
-<tr><th>Custom model calls</th><td>${S.modelCallOk} / ${S.modelCallTotal} succeeded${S.avgLatencyMs != null ? `, avg ${S.avgLatencyMs}ms` : ' (none succeeded)'}</td></tr>
-<tr><th>Est. tokens from custom calls *</th><td>${S.modelCallEstTokens || 0}</td></tr>
-<tr><th>Est. transcript tokens *</th><td>${S.transcriptEstTokens != null ? S.transcriptEstTokens : '(no transcript captured)'}</td></tr>
+${showModelCalls ? `<tr><th>Custom model calls</th><td>${S.modelCallOk} / ${S.modelCallTotal} succeeded${S.avgLatencyMs != null ? `, avg ${S.avgLatencyMs}ms` : ' (none succeeded)'}</td></tr>` : ''}
+${showTranscriptTokens ? `<tr><th>Est. transcript tokens *</th><td>${S.transcriptEstTokens}</td></tr>` : ''}
 </table>
-<p class="est">* Estimates. Rules: with text (transcript/participant text) → CJK ≈1 token/char, ASCII ≈1 token/4 chars; counts only (custom calls) → ≈3 chars/token (prompt and response estimated separately, then summed). Real token/cost figures for native conversations are not available through the extension API — see the yellow note below.</p>`;
+${showModelCalls || showTranscriptTokens ? `<p class="est">* Estimates: transcript tokens are character-based (CJK ≈1 token/char, ASCII ≈1 token/4 chars); custom-call tokens (≈3 chars/token) appear only when a custom participant reports calls. Real token/cost figures for native conversations are not available through the extension API.</p>` : ''}`;
 
   return `<!DOCTYPE html>
 <html lang="en">
@@ -221,13 +218,14 @@ ${d.commitsMade == null ? '' : (commitRows ? `<table><tr><th>Time</th><th>Commit
 ${rows ? `<table><tr><th>Relative time</th><th>Event</th><th>Details</th></tr>${rows}</table>` : '<p>(empty)</p>'}
 ${d.stats && Object.keys(d.stats.savesByExt || {}).length ? `<details><summary>File saves by extension</summary><table><tr><th>Extension</th><th>Count</th></tr>${saveRows}</table></details>` : ''}
 
-<h2>Model Calls by Custom Participants (measured)</h2>
-${modelRows ? `<table><tr><th>Participant</th><th>Model</th><th>Result</th><th>Latency</th><th>Prompt chars</th><th>Response chars</th><th>Est. tokens *</th></tr>${modelRows}</table><p class="est">* Token figures are character estimates (rule under "Session Totals"). If vendor usage ever becomes available (once chat model pipelines open up), these will be replaced with real values and the source noted.</p>` : '<p>(No model calls were reported this session. VSC Chat Trail itself never calls a model; measured data appears here only when a future model-calling custom participant reports events via trail.logModelCall.)</p>'}
+${modelRows ? `<h2>Model Calls by Custom Participants (measured)</h2>
+<table><tr><th>Participant</th><th>Model</th><th>Result</th><th>Latency</th><th>Prompt chars</th><th>Response chars</th><th>Est. tokens *</th></tr>${modelRows}</table><p class="est">* Token figures are character estimates (see rules under "Session Totals"). Real vendor usage is not exposed to extensions; these will be replaced with measured values if it ever becomes available.</p>` : ''}
 
 <h2>Transcript Snapshot</h2>
-${d.transcript && d.transcript.text ? `<details open><summary>${escapeHtml(d.transcript.source || '?')} · ${(d.transcript.text || '').length} chars · est. ${estimateTokens(d.transcript.text)} tokens *</summary><pre>${escapeHtml(d.transcript.text)}</pre></details>` : '<p>Could not capture the transcript automatically. Manual option: in the Chat panel, open that conversation\'s menu (⋯) → <b>Export Conversation</b>, save the content to a file — import support is planned.</p>'}
+${d.transcript && d.transcript.text ? `<details open><summary>${escapeHtml(d.transcript.source || '?')} · ${(d.transcript.text || '').length} chars · est. ${estimateTokens(d.transcript.text)} tokens *</summary><pre>${escapeHtml(d.transcript.text)}</pre></details>` : '<p>No transcript was captured when the session stopped. To include one, keep the conversation open in the Chat panel of the recording window and use <b>Export Conversation</b> (conversation menu ⋯) before stopping.</p>'}
 
-<h2>Known Limitations / Notes</h2>
+<details>
+<summary><b>Known limitations / notes (why some data is missing)</b></summary>
 <ul>
 <li>Model chain-of-thought and per-tool inputs/outputs: <b>not available</b> (vendor chat does not expose them to any extension).</li>
 <li>Agent-mode steps and checkpoints are visible only in the UI; there is no programmatic outlet yet — not captured in this version.</li>
@@ -235,9 +233,9 @@ ${d.transcript && d.transcript.text ? `<details open><summary>${escapeHtml(d.tra
 <li>File-save / terminal-command events rely on VS Code events and terminal Shell Integration; terminal sessions without integration are not recorded.</li>
 <li>Text-edit stats count editor changes only; they are a proxy for "output kept" and can differ from the final git diff (e.g. formatting round-trips, reverts).</li>
 <li>Terminal duration comes from shell-integration execution timing; terminal output volume is not exposed by the API.</li>
-<li>Estimate rules: (1) with text (transcript/participant text): CJK ≈1 token per char, ASCII ≈1 token per 4 chars, other chars ≈1 token per 2 chars; (2) counts only (custom calls): ≈3 chars per token (prompt and response estimated separately, then summed). All estimates are marked *.</li>
 ${notes ? `<li>Other notes:</li>${notes}` : ''}
 </ul>
+</details>
 
 <p class="est">Generated: ${escapeHtml(fmtTime(Date.now()))} | schemaVersion=${escapeHtml(d.schemaVersion || '?')}</p>
 </body>

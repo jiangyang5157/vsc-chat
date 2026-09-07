@@ -14,7 +14,7 @@ A VS Code extension that records one **AI collaboration session** in the chat/ag
 |---|---|
 | git | Branch/HEAD at start and end, the full diff since the start HEAD (stat + file list), untracked new files, commits made during the session |
 | Text edits | Per-file added/removed character counts (content is never stored) — a proxy for how much AI output was kept |
-| Timeline | File saves, terminal commands (needs Shell Integration, incl. duration), model calls reported by custom participants, active-file switches, window focus changes |
+| Timeline | File saves, terminal commands (needs Shell Integration, incl. duration), model calls reported by custom participants, active-file switches |
 | Transcript | Tries the official Export Conversation command at the end to capture the current session text |
 
 **We never fabricate data**: vendor chat (e.g. GitHub Copilot) does not expose tokens/cache hits/cost/chain-of-thought to extensions. Efficiency is measured with **time/effect proxies** (edits kept, terminal runs, commits, activity), never guessed tokens for third-party tools. See `docs/PLAN.md` for the reasoning and boundaries.
@@ -58,7 +58,7 @@ vsc-chat/
    → the audit report opens in your browser
 ```
 
-Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / terminal runs + total time / changed files / text edits added-removed / commits / custom model calls) → AI Changes Summary (git) → Commits Made During Session → Timeline (saves, terminal, active-file, window focus) → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations.
+Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / terminal runs + total time / changed files / text edits added-removed / commits / custom model calls) → AI Changes Summary (git) → Commits Made During Session → Timeline (saves, terminal, active-file) → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations (collapsed).
 
 Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the artifact, for future scripted session/skill aggregation.
 
@@ -96,6 +96,7 @@ A: Measured or explicitly estimated only: recording duration, file-save count, t
 
 - [x] v0.2: Recording + git diff + transcript snapshot + task tags + session totals + HTML/JSON artifacts
 - [x] v0.3: Removed the validation participants @probe / @asb-runbook; narrowed to a pure Trail tool
-- [x] v0.4: Ambient effect signals — text-edit stats, terminal run duration, commits during session, active-file / window-focus events
+- [x] v0.4: Ambient effect signals — text-edit stats, terminal run duration, commits during session, active-file events
+- [x] v0.4.1: Report cleanup — hide empty model-call/token rows, collapse known limitations, remove misleading window-focus events, readable non-ASCII git paths
 - [ ] (Backlog, not needed now) Cross-session aggregation analysis by task tag — revisit only if multi-session comparison becomes a goal
 - [ ] (Future) Register a model-calling custom participant (e.g. @asb-review) that reports measured data via `trail.logModelCall`

@@ -1,4 +1,4 @@
-// trail.js — session recorder (v0.4)
+// trail.js — session recorder (v0.4.1)
 //
 // Design goal: act like a "recorder" for one AI collaboration session, capturing the
 // observable facts the extension API can see, and exporting an HTML audit report at the end.
@@ -7,7 +7,7 @@
 //     list), untracked new files, and commits made during the session (hash/date/subject)
 //   - timeline events: file saves, terminal commands (Shell Integration, incl. duration),
 //     model calls made by custom participants via logModelCall (measured latency/chars),
-//     active-file changes, and window focus changes
+//     and active-file changes
 //   - text edits: per-file added/removed character counts (content is never stored) — a
 //     proxy for how much AI output was actually kept
 //   - transcript snapshot: tries the official Export Conversation command to capture the
@@ -35,7 +35,8 @@ function logModelCall(partial) {
 }
 
 async function runGit(args, cwd) {
-  const { stdout } = await execFileP('git', args, { cwd, timeout: 20000 });
+  // core.quotepath=false: keep non-ASCII paths (e.g. Chinese filenames) readable in reports
+  const { stdout } = await execFileP('git', ['-c', 'core.quotepath=false', ...args], { cwd, timeout: 20000 });
   return stdout;
 }
 
@@ -192,7 +193,7 @@ class Recorder {
     }
 
     const data = {
-      generatorVersion: 'vsc-chat-trail v0.4.0',
+      generatorVersion: 'vsc-chat-trail v0.4.1',
       schemaVersion: 'trail-jsonl-1',
       id: this.id,
       startTs: this.startTs,
@@ -326,14 +327,6 @@ class Recorder {
       if (isExcluded(rel) || rel === lastActiveRel) return;
       lastActiveRel = rel;
       rec.add({ type: 'editor_activity', relPath: rel, languageId: doc.languageId });
-    }));
-
-    // Record window focus transitions (focused/blurred) — coarse idle/away signal.
-    let lastFocused = vscode.window.state.focused;
-    rec.disposables.push(vscode.window.onDidChangeWindowState((s) => {
-      if (s.focused === lastFocused) return;
-      lastFocused = s.focused;
-      rec.add({ type: 'window_focus', focused: s.focused });
     }));
 
     // Anchor the timeline with the file that was active when recording started.

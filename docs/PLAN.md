@@ -26,6 +26,7 @@ Story analysis, code refactor, unit-test generation).
 | D4 | The only token-ish figure kept is the **existing coarse whole-session estimate** from the captured transcript (char-based, labeled `*`). It is optional, clearly marked, and never attributed to a specific tool. | No new token math anywhere. |
 | D5 | **No cross-session aggregation (former "Phase 3") for now.** Aggregation means merging many sessions' reports for tool-vs-tool comparison; it is not the current goal. | Stays a backlog idea only. If it ever becomes needed, it requires the `<tool>:<task>` tag convention first — see Backlog. |
 | D6 | **No rollout/validation phase (former "Phase 4") either.** Use the recorder in real work first; revisit only if real sessions show a clear need. | Nothing to build. |
+| D7 | **`window_focus` events removed (v0.4.1).** Window blur does not mean work stopped — agents/chat keep running while the window is unfocused — so the signal was misleading, not informative. | `editor_activity` remains: it only records which file is active in this window, which is accurate and unambiguous. |
 
 ## 3. Honest boundaries (why we measure what we measure)
 
@@ -39,8 +40,9 @@ Story analysis, code refactor, unit-test generation).
 - Text-edit stats are a **proxy**: they count editor changes during the session; net
   added/removed chars can differ from the final git diff (formatting round-trips,
   reverts). Label them as proxy data.
-- Window-focus events are coarse (focused/blurred) and cannot tell us which window or
-  task the user went to.
+- Recording is per-window: events belong to the VS Code window where the session runs.
+  Work done in other windows/apps while an agent keeps running here is not attributed —
+  the timeline only shows what happened in this window (see decision D7).
 
 ## 4. Phase 2 — ambient effect signals (implemented in v0.4)
 
@@ -52,8 +54,7 @@ file-save, terminal-command, model-call and transcript data:
 | Text edits (per file) | `workspace.onDidChangeTextDocument` → accumulate added/removed chars per relative path; content is **not** stored | "How much AI output was actually kept" proxy; totals in the report |
 | Terminal run duration | pair `execution.creationTime` with the end event | How long a command (e.g. the tool's test run) took |
 | Commits during session | at stop: `git log <startHead>..HEAD` (hash/date/subject) | Which AI work turned into commits |
-| Active-file trace | `window.onDidChangeActiveTextEditor` → `editor_activity` events | What the user was working on, when |
-| Window focus | `window.onDidChangeWindowState` → `window_focus` events (only on change) | Idle/away periods in the timeline |
+| Active-file trace | `window.onDidChangeActiveTextEditor` → `editor_activity` events | What the user was working on in this window, when |
 
 Report surface: new "Session Totals" rows (terminal total duration, chars added/removed,
 commits made), a "Commits Made During Session" section, and the new event types in the
@@ -67,7 +68,7 @@ access are, over many sessions:
 - duration of the tool's run (terminal) and its exit code (pass/fail proxy),
 - how much text the session added and kept (accept proxy),
 - whether the work ended in a commit and how many files it touched,
-- how many back-and-forth editor switches / focus gaps occurred (friction proxy).
+- how many back-and-forth editor switches occurred (friction proxy).
 
 These are honest "time/effect" numbers: measured, not estimated. They support relative
 comparisons (tool A vs tool B on similar tasks) even without token data — but they
@@ -96,13 +97,16 @@ from the tool's backend + admin approval, not from this extension.
 - Session "accept/reject" signals for review tools (needs editor-action heuristics;
   research first).
 
-## 7. Verification checklist (for v0.4)
+## 7. Verification checklist (v0.4 / v0.4.1)
 
-- [ ] Start a session, open/edit files, run a terminal command, switch editors, blur and
-      refocus the window, stop the session.
+- [ ] Start a session, open/edit files, run a terminal command, switch editors, stop the
+      session.
 - [ ] Report shows: chars added/removed, terminal total duration, commits section,
-      `editor_activity` / `window_focus` timeline rows.
+      `editor_activity` timeline rows; no empty "model calls"/token rows when there is
+      nothing to show; no `window_focus` events.
 - [ ] JSON sidecar contains `editStats` and `commitsMade`.
 - [ ] No content is stored anywhere (only counts/paths/commands); output stays under
       `.vsc-chat-trail/`; nothing uploaded.
 - [ ] No token figures appear for third-party tools.
+- [ ] Non-ASCII file paths (e.g. Chinese filenames) appear readable in changed-file /
+      commit lists.
