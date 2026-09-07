@@ -1,17 +1,20 @@
-// trail.js — session recorder (v0.3)
+// trail.js — session recorder (v0.4)
 //
 // Design goal: act like a "recorder" for one AI collaboration session, capturing the
 // observable facts the extension API can see, and exporting an HTML audit report at the end.
 // What is recorded (all "world changes" available to the extension API):
 //   - git: branch and HEAD at start/end, the full diff since the start HEAD (stat + file
-//     list), and untracked new files
-//   - timeline events: file saves, terminal commands (Shell Integration), and model calls
-//     made by custom participants via logModelCall (measured latency/chars)
+//     list), untracked new files, and commits made during the session (hash/date/subject)
+//   - timeline events: file saves, terminal commands (Shell Integration, incl. duration),
+//     model calls made by custom participants via logModelCall (measured latency/chars),
+//     active-file changes, and window focus changes
+//   - text edits: per-file added/removed character counts (content is never stored) — a
+//     proxy for how much AI output was actually kept
 //   - transcript snapshot: tries the official Export Conversation command to capture the
 //     current session
 // We never fabricate data: vendor chat (e.g. GitHub Copilot) does not expose tokens/cache/
-// cost/chain-of-thought to extensions, so token figures in this version are character-based
-// estimates.
+// cost/chain-of-thought to extensions. Efficiency is measured with time/effect proxies, not
+// tokens — see docs/PLAN.md.
 'use strict';
 
 const vscode = require('vscode');
@@ -95,6 +98,8 @@ class Recorder {
     this.outputDir = opts.outputDir;
     this.logPath = opts.logPath;
     this.tag = opts.tag || null;
+    this.editStats = {}; // relPath -> { added, removed } char counts; content never stored
+    this.editEvents = 0; // number of text-change events observed
   }
 
   add(ev) {
@@ -136,6 +141,7 @@ class Recorder {
     let diffStat = null;
     const filesChanged = [];
     let untracked = [];
+    let commitsMade = null; // null = git not available; [] = none made during session
     if (this.root && this.startHead) {
       try {
         diffStat = await runGit(['diff', this.startHead, '--stat', '--no-color'], this.root);
@@ -152,6 +158,18 @@ class Recorder {
       } catch (e) { out.appendLine('[trail] failed to read git diff: ' + (e && e.message)); }
     }
 
+    // Commits made during the session (git log since the start HEAD; unavailable when
+    // there is no repository or no commits yet at start)
+    if (this.root && this.startHead) {
+      try {
+        const log = await runGit(['log', '--format=%H%x09%aI%x09%s', this.startHead + '..HEAD'], this.root);
+        commitsMade = log.split('\n').filter(Boolean).map((line) => {
+          const [hash, date, ...rest] = line.split('\t');
+          return { hash, date, subject: rest.join('\t').trim() };
+        });
+      } catch (e) { out.appendLine('[trail] failed to read commits: ' + (e && e.message)); }
+    }
+
     // 4) Capture the session transcript (official Export Conversation command; failure is not fatal)
     const transcript = await tryExportTranscript(out);
 
@@ -166,8 +184,15 @@ class Recorder {
     const modelCalls = this.events.filter((e) => e.type === 'model_call');
     const commandCount = this.events.filter((e) => e.type === 'terminal_cmd').length;
 
+    let totalAdded = 0;
+    let totalRemoved = 0;
+    for (const rel in this.editStats) {
+      totalAdded += this.editStats[rel].added;
+      totalRemoved += this.editStats[rel].removed;
+    }
+
     const data = {
-      generatorVersion: 'vsc-chat-trail v0.3.0',
+      generatorVersion: 'vsc-chat-trail v0.4.0',
       schemaVersion: 'trail-jsonl-1',
       id: this.id,
       startTs: this.startTs,
@@ -187,6 +212,8 @@ class Recorder {
       transcript,
       events: this.events,
       stats: { savesByExt, commandCount },
+      editStats: { files: this.editStats, totalAdded, totalRemoved, editEvents: this.editEvents },
+      commitsMade,
       notes: []
     };
 
@@ -238,24 +265,82 @@ class Recorder {
     rec.logStream = fs.createWriteStream(logPath, { flags: 'a' });
     rec.add({ type: 'session_start', workspaceRoot: root || null, branch: startBranch, head: startHead, tag: rec.tag });
 
+    // Relative path prefix under which this extension writes its artifacts; exclude
+    // those from save/edit accounting (they are produced by the recorder, not the user).
+    const outRel = root ? path.relative(root, outputDir) : null;
+    const excludeRel = outRel && !outRel.startsWith('..') ? outRel : null;
+    const isExcluded = (rel) => rel.startsWith('.git') ||
+      (!!excludeRel && (rel === excludeRel || rel.startsWith(excludeRel + path.sep)));
+
     // Listen for file saves
     rec.disposables.push(vscode.workspace.onDidSaveTextDocument((doc) => {
       if (!doc || doc.uri.scheme !== 'file') return;
       const rel = root ? path.relative(root, doc.uri.fsPath) : doc.uri.fsPath;
-      if (rel.startsWith('.git')) return;
+      if (isExcluded(rel)) return;
       const ext = path.extname(doc.uri.fsPath).toLowerCase();
       rec.add({ type: 'file_saved', relPath: rel, languageId: doc.languageId, ext });
     }));
 
+    // Listen for text edits and accumulate per-file added/removed char counts.
+    // Counts only — document content is never stored.
+    rec.disposables.push(vscode.workspace.onDidChangeTextDocument((e) => {
+      const doc = e && e.document;
+      if (!doc || doc.uri.scheme !== 'file') return;
+      const rel = root ? path.relative(root, doc.uri.fsPath) : doc.uri.fsPath;
+      if (isExcluded(rel)) return;
+      let added = 0;
+      let removed = 0;
+      for (const c of e.contentChanges) {
+        if (c.text) added += c.text.length;
+        if (typeof c.rangeLength === 'number') removed += c.rangeLength;
+      }
+      if (!added && !removed) return;
+      rec.editEvents++;
+      const st = rec.editStats[rel] || (rec.editStats[rel] = { added: 0, removed: 0 });
+      st.added += added;
+      st.removed += removed;
+    }));
+
     // Listen for terminal command completion (Shell Integration; skipped on older
-    // VS Code versions that lack this API)
+    // VS Code versions that lack this API). Duration = now − execution creation time.
     const onEnd = vscode.window.onDidEndTerminalShellExecution;
     if (typeof onEnd === 'function') {
       rec.disposables.push(onEnd((e) => {
-        const cl = e && e.execution && e.execution.commandLine;
+        const ex = e && e.execution;
+        const cl = ex && ex.commandLine;
         const cmd = typeof cl === 'string' ? cl : (cl && cl.value) || '';
-        rec.add({ type: 'terminal_cmd', command: String(cmd).slice(0, 1000), exitCode: e.exitCode == null ? null : e.exitCode });
+        let durationMs = null;
+        if (ex && typeof ex.creationTime === 'number' && ex.creationTime > 0) {
+          durationMs = Math.max(0, Date.now() - ex.creationTime);
+        }
+        rec.add({ type: 'terminal_cmd', command: String(cmd).slice(0, 1000), exitCode: e.exitCode == null ? null : e.exitCode, durationMs });
       }));
+    }
+
+    // Record which file is active whenever the user switches editors (file-only).
+    let lastActiveRel = null;
+    rec.disposables.push(vscode.window.onDidChangeActiveTextEditor((ed) => {
+      const doc = ed && ed.document;
+      if (!doc || doc.uri.scheme !== 'file') return;
+      const rel = root ? path.relative(root, doc.uri.fsPath) : doc.uri.fsPath;
+      if (isExcluded(rel) || rel === lastActiveRel) return;
+      lastActiveRel = rel;
+      rec.add({ type: 'editor_activity', relPath: rel, languageId: doc.languageId });
+    }));
+
+    // Record window focus transitions (focused/blurred) — coarse idle/away signal.
+    let lastFocused = vscode.window.state.focused;
+    rec.disposables.push(vscode.window.onDidChangeWindowState((s) => {
+      if (s.focused === lastFocused) return;
+      lastFocused = s.focused;
+      rec.add({ type: 'window_focus', focused: s.focused });
+    }));
+
+    // Anchor the timeline with the file that was active when recording started.
+    const initial = vscode.window.activeTextEditor;
+    if (initial && initial.document && initial.document.uri.scheme === 'file') {
+      const rel = root ? path.relative(root, initial.document.uri.fsPath) : initial.document.uri.fsPath;
+      if (!isExcluded(rel)) rec.add({ type: 'editor_activity', relPath: rel, languageId: initial.document.languageId });
     }
 
     return rec;

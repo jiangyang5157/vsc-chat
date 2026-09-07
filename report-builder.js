@@ -56,6 +56,8 @@ const EVENT_LABELS = {
   file_saved: '💾 File saved',
   terminal_cmd: '⌨️ Terminal command',
   model_call: '🤖 Model call (custom participant)',
+  editor_activity: '📌 Active file',
+  window_focus: '🖥️ Window focus',
   transcript: '📄 Transcript snapshot',
   session_end: '■ End recording'
 };
@@ -75,7 +77,13 @@ function computeSummary(d) {
     modelCallTotal: calls.length,
     avgLatencyMs: ok.length ? Math.round(ok.reduce((s, c) => s + (c.latencyMs || 0), 0) / ok.length) : null,
     modelCallEstTokens: calls.reduce((s, c) => s + estOf(c), 0),
-    transcriptEstTokens: (d.transcript && d.transcript.text) ? estimateTokens(d.transcript.text) : null
+    transcriptEstTokens: (d.transcript && d.transcript.text) ? estimateTokens(d.transcript.text) : null,
+    charsAdded: (d.editStats && typeof d.editStats.totalAdded === 'number') ? d.editStats.totalAdded : null,
+    charsRemoved: (d.editStats && typeof d.editStats.totalRemoved === 'number') ? d.editStats.totalRemoved : null,
+    commits: (d.commitsMade || []).length,
+    terminalDurationMs: evs
+      .filter((e) => e.type === 'terminal_cmd' && typeof e.durationMs === 'number')
+      .reduce((s, e) => s + e.durationMs, 0) || null
   };
 }
 
@@ -92,7 +100,14 @@ function buildReport(data) {
         detail = `${ev.relPath || '?'}  (${ev.languageId || ''})`;
         break;
       case 'terminal_cmd':
-        detail = `${ev.command || '?'}  → exit ${ev.exitCode == null ? '?' : ev.exitCode}`;
+        detail = `${ev.command || '?'}  → exit ${ev.exitCode == null ? '?' : ev.exitCode}` +
+          (typeof ev.durationMs === 'number' ? `  (${fmtDur(ev.durationMs)})` : '');
+        break;
+      case 'editor_activity':
+        detail = `${ev.relPath || '?'}  (${ev.languageId || ''})`;
+        break;
+      case 'window_focus':
+        detail = ev.focused ? 'window focused' : 'window blurred';
         break;
       case 'model_call': {
         const e = (ev.estTokens != null && ev.estPrompt != null)
@@ -115,6 +130,10 @@ function buildReport(data) {
 
   const fileRows = (d.filesChanged || []).map((f) =>
     `<tr><td>${escapeHtml(f.status)}</td><td>${escapeHtml(f.path)}</td></tr>`
+  ).join('\n');
+
+  const commitRows = (d.commitsMade || []).map((c) =>
+    `<tr><td>${escapeHtml(fmtTime(new Date(c.date).getTime()))}</td><td><code>${escapeHtml(String(c.hash || '').slice(0, 8))}</code></td><td>${escapeHtml(c.subject || '')}</td></tr>`
   ).join('\n');
 
   const untrackedRows = (d.untracked || []).map((p) =>
@@ -142,8 +161,10 @@ function buildReport(data) {
 <table>
 <tr><th>Duration</th><td>${fmtDur(d.durationMs)}</td></tr>
 <tr><th>File saves</th><td>${S.fileSaves}</td></tr>
-<tr><th>Terminal commands</th><td>${S.terminalCommands}</td></tr>
+<tr><th>Terminal commands</th><td>${S.terminalCommands}${S.terminalDurationMs != null ? ` (total ${fmtDur(S.terminalDurationMs)})` : ''}</td></tr>
 <tr><th>Files changed (git)</th><td>${S.filesChanged}${S.untracked ? ` (+ ${S.untracked} untracked new files)` : ''}</td></tr>
+<tr><th>Text edits (chars added / removed)</th><td>${S.charsAdded == null ? '(not measured)' : `${S.charsAdded} / ${S.charsRemoved}`}</td></tr>
+<tr><th>Commits made during session</th><td>${S.commits}</td></tr>
 <tr><th>Custom model calls</th><td>${S.modelCallOk} / ${S.modelCallTotal} succeeded${S.avgLatencyMs != null ? `, avg ${S.avgLatencyMs}ms` : ' (none succeeded)'}</td></tr>
 <tr><th>Est. tokens from custom calls *</th><td>${S.modelCallEstTokens || 0}</td></tr>
 <tr><th>Est. transcript tokens *</th><td>${S.transcriptEstTokens != null ? S.transcriptEstTokens : '(no transcript captured)'}</td></tr>
@@ -193,6 +214,9 @@ Token numbers are <b>character-based estimates (*)</b>. Latency and character co
 ${d.diffStat ? `<pre>${escapeHtml(d.diffStat)}</pre>` : '<p>(no git or no changes)</p>'}
 ${fileRows || untrackedRows ? `<table><tr><th>Status</th><th>File</th></tr>${fileRows}${untrackedRows}</table>` : ''}
 
+<h2>Commits Made During Session</h2>
+${d.commitsMade == null ? '' : (commitRows ? `<table><tr><th>Time</th><th>Commit</th><th>Message</th></tr>${commitRows}</table>` : '<p>(no commits during the session)</p>')}
+
 <h2>Timeline (session events)</h2>
 ${rows ? `<table><tr><th>Relative time</th><th>Event</th><th>Details</th></tr>${rows}</table>` : '<p>(empty)</p>'}
 ${d.stats && Object.keys(d.stats.savesByExt || {}).length ? `<details><summary>File saves by extension</summary><table><tr><th>Extension</th><th>Count</th></tr>${saveRows}</table></details>` : ''}
@@ -209,6 +233,8 @@ ${d.transcript && d.transcript.text ? `<details open><summary>${escapeHtml(d.tra
 <li>Agent-mode steps and checkpoints are visible only in the UI; there is no programmatic outlet yet — not captured in this version.</li>
 <li>Which concrete model "auto" routes to: unknowable for native chat conversations; only custom participants can record the model currently selected in the dropdown.</li>
 <li>File-save / terminal-command events rely on VS Code events and terminal Shell Integration; terminal sessions without integration are not recorded.</li>
+<li>Text-edit stats count editor changes only; they are a proxy for "output kept" and can differ from the final git diff (e.g. formatting round-trips, reverts).</li>
+<li>Terminal duration comes from shell-integration execution timing; terminal output volume is not exposed by the API.</li>
 <li>Estimate rules: (1) with text (transcript/participant text): CJK ≈1 token per char, ASCII ≈1 token per 4 chars, other chars ≈1 token per 2 chars; (2) counts only (custom calls): ≈3 chars per token (prompt and response estimated separately, then summed). All estimates are marked *.</li>
 ${notes ? `<li>Other notes:</li>${notes}` : ''}
 </ul>
@@ -237,6 +263,8 @@ function buildJsonReport(data) {
     diffStat: data.diffStat,
     filesChanged: data.filesChanged || [],
     untracked: data.untracked || [],
+    editStats: data.editStats || null,
+    commitsMade: data.commitsMade == null ? null : data.commitsMade,
     modelCalls: (data.modelCalls || []).map((m) => ({ ...m, estTokens: m.estTokens })),
     transcript: data.transcript
       ? { source: data.transcript.source, textLength: (data.transcript.text || '').length, estTokens: estimateTokens(data.transcript.text) }

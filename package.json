@@ -1,8 +1,8 @@
 {
   "name": "vsc-chat-trail",
   "displayName": "VSC Chat Trail",
-  "description": "Records one AI collaboration session in VS Code Chat (git diff, file saves, terminal commands, custom-participant model calls) and exports an HTML/JSON audit report. Local-only, no API key, no build step, makes no model calls.",
-  "version": "0.3.0",
+  "description": "Records one AI collaboration session in VS Code Chat (git diff/commits, file saves, text edits, terminal runs, custom-participant model calls) and exports an HTML/JSON audit artifact. Local-only, no API key, no build step, makes no model calls.",
+  "version": "0.4.0",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.100.0"

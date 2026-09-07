@@ -12,11 +12,12 @@ A VS Code extension that records one **AI collaboration session** in the chat/ag
 
 | Category | Content |
 |---|---|
-| git | Branch/HEAD at start and end, the full diff since the start HEAD (stat + file list), untracked new files |
-| Timeline | File saves, terminal commands (needs Shell Integration), model calls reported by custom participants (measured latency/chars) |
+| git | Branch/HEAD at start and end, the full diff since the start HEAD (stat + file list), untracked new files, commits made during the session |
+| Text edits | Per-file added/removed character counts (content is never stored) — a proxy for how much AI output was kept |
+| Timeline | File saves, terminal commands (needs Shell Integration, incl. duration), model calls reported by custom participants, active-file switches, window focus changes |
 | Transcript | Tries the official Export Conversation command at the end to capture the current session text |
 
-**We never fabricate data**: vendor chat (e.g. GitHub Copilot) does not expose tokens/cache hits/cost/chain-of-thought to extensions, so token figures in the report are always character-based estimates marked with `*`.
+**We never fabricate data**: vendor chat (e.g. GitHub Copilot) does not expose tokens/cache hits/cost/chain-of-thought to extensions. Efficiency is measured with **time/effect proxies** (edits kept, terminal runs, commits, activity), never guessed tokens for third-party tools. See `docs/PLAN.md` for the reasoning and boundaries.
 
 ## File structure
 
@@ -24,8 +25,9 @@ A VS Code extension that records one **AI collaboration session** in the chat/ag
 vsc-chat/
 ├── package.json          # Extension manifest: Trail commands + setting (vscChatTrail.outputDir)
 ├── extension.js          # Activation entry point (only registers Trail)
-├── trail.js              # Recorder: event listeners + git diff + transcript snapshot + export
-├── report-builder.js     # HTML/JSON report generation (pure functions, no vscode dependency, testable standalone)
+├── trail.js              # Recorder: event listeners + git diff/commits + edit stats + transcript + export
+├── report-builder.js     # HTML/JSON artifact generation (pure functions, no vscode dependency, testable standalone)
+├── docs/PLAN.md          # Feature plan, decisions, and honest boundaries
 ├── .vscode/launch.json   # F5 debug configuration
 └── README.md
 ```
@@ -56,7 +58,7 @@ vsc-chat/
    → the audit report opens in your browser
 ```
 
-Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / commands / changed files / estimated tokens) → AI Changes Summary (git) → Timeline → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations.
+Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / terminal runs + total time / changed files / text edits added-removed / commits / custom model calls) → AI Changes Summary (git) → Commits Made During Session → Timeline (saves, terminal, active-file, window focus) → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations.
 
 Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the artifact, for future scripted session/skill aggregation.
 
@@ -75,6 +77,9 @@ A: No. VSC Chat Trail only listens to events, captures git diffs, and tries the 
 **Q: Why is the "Model calls by custom participants" table empty?**
 A: That table only records model calls that a custom participant reports through `trail.logModelCall`. This extension currently registers no model-calling participants (the early validation participants @probe / @asb-runbook were removed in v0.3). If you only use the native chat window, this table is legitimately empty — vendor chat does not expose native conversation usage to extensions. Not a bug; a boundary.
 
+**Q: Can Trail measure tokens/cost of the internal AI tools (review / story / refactor / tests)?**
+A: No per-tool tokens, by design. Real usage is only produced where the model request happens (the tools' own backend or Copilot's org metrics API, which is per-user/per-day and needs admin). The extension API exposes no usage for vendor chat. Trail therefore measures **time/effect proxies** instead — how long runs took, how much edited text was kept, what got committed, when work happened — which supports relative efficiency comparisons without guessing tokens. Rationale: `docs/PLAN.md`.
+
 **Q: Why does the report show `?*` tokens / no token data?**
 A: Tokens are always estimates marked `*`. They only exist when there is text to estimate (a captured transcript) or a custom participant reported a call.
 
@@ -89,7 +94,8 @@ A: Measured or explicitly estimated only: recording duration, file-save count, t
 
 ## Roadmap
 
-- [x] v0.2: Recording + git diff + transcript snapshot + task tags + session totals + HTML/JSON reports
+- [x] v0.2: Recording + git diff + transcript snapshot + task tags + session totals + HTML/JSON artifacts
 - [x] v0.3: Removed the validation participants @probe / @asb-runbook; narrowed to a pure Trail tool
-- [ ] Trail aggregation analysis: per task-tag/skill statistics (avg duration, success rate, change size, estimated tokens)
+- [x] v0.4: Ambient effect signals — text-edit stats, terminal run duration, commits during session, active-file / window-focus events
+- [ ] Cross-session aggregation analysis: per task-tag/skill statistics (avg duration, success proxies, change size)
 - [ ] (Future) Register a model-calling custom participant (e.g. @asb-review) that reports measured data via `trail.logModelCall`
