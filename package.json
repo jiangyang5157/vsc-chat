@@ -1,0 +1,64 @@
+{
+  "name": "vsc-chat-tools",
+  "displayName": "VSC Chat Toolkit",
+  "description": "围绕 VS Code Chat 的内部工具包：模型访问探测(@probe)、本地 runbook 检索(@asb-runbook)、会话轨迹记录器(VSC Chat Trail)。纯本地、无 API key、无构建。",
+  "version": "0.2.0",
+  "publisher": "local-dev",
+  "engines": {
+    "vscode": "^1.100.0"
+  },
+  "categories": [
+    "AI",
+    "Other"
+  ],
+  "activationEvents": [],
+  "main": "./extension.js",
+  "contributes": {
+    "chatParticipants": [
+      {
+        "id": "vsc-chat-tools.probe",
+        "name": "probe",
+        "fullName": "Chat Probe",
+        "description": "探测当前 chat 会话能否把模型(request.model)交给扩展调用",
+        "isSticky": false
+      },
+      {
+        "id": "vsc-chat-tools.asb-runbook",
+        "name": "asb-runbook",
+        "fullName": "Runbook Search",
+        "description": "在 docs/runbooks 等目录里本地检索团队文档(纯程序化，不调用模型)",
+        "isSticky": false
+      }
+    ],
+    "configuration": {
+      "title": "VSC Chat Toolkit",
+      "properties": {
+        "vscChat.runbookDirs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "docs/runbooks"
+          ],
+          "description": "runbook 检索目录。可以是绝对路径，也可以是相对于工作区根目录的路径，例如 docs/runbooks。"
+        },
+        "vscChat.outputDir": {
+          "type": "string",
+          "default": ".vsc-chat-trail",
+          "description": "会话轨迹记录器的输出目录（相对工作区根；未打开文件夹时用扩展全局存储）。JSONL 原始日志与 HTML/JSON 报告都在这里。"
+        }
+      }
+    },
+    "commands": [
+      {
+        "command": "vscChat.start",
+        "title": "VSC Chat Trail: ▶ 开始记录会话"
+      },
+      {
+        "command": "vscChat.finish",
+        "title": "VSC Chat Trail: ■ 结束并导出 HTML 审计报告"
+      }
+    ]
+  }
+}
