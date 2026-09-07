@@ -14,7 +14,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { execFile } = require('child_process');
 const { promisify } = require('util');
-const { buildReport, buildJsonReport, estimateTokens, fmtDur } = require('./report-builder');
+const { buildReport, buildJsonReport, estimateTokens, charsEst, fmtDur } = require('./report-builder');
 
 const execFileP = promisify(execFile);
 
@@ -93,8 +93,11 @@ class Recorder {
   add(ev) {
     ev.ts = ev.ts || Date.now();
     if (ev.type === 'model_call' && ev.estTokens == null) {
-      // 粗估：约 3 字符 ≈ 1 token（估算值，报告会标注 *）
-      ev.estTokens = Math.round(((ev.promptChars || 0) + (ev.responseChars || 0)) / 3);
+      // 无原文时按 3 字符≈1 token 估（P/R 分开估后相加），报告会标注 *
+      const e = charsEst(ev.promptChars || 0, ev.responseChars || 0);
+      ev.estTokens = e.total;
+      ev.estPrompt = e.prompt;
+      ev.estResp = e.response;
     }
     this.events.push(ev);
     if (this.logStream) {
@@ -156,7 +159,7 @@ class Recorder {
     const commandCount = this.events.filter((e) => e.type === 'terminal_cmd').length;
 
     const data = {
-      generatorVersion: 'vsc-chat-trail v0.2.0',
+      generatorVersion: 'vsc-chat-trail v0.2.1',
       schemaVersion: 'trail-jsonl-1',
       id: this.id,
       startTs: this.startTs,

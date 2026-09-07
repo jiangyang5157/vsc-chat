@@ -18,6 +18,14 @@ function estimateTokens(text) {
   return Math.round(cjk + ascii / 4);
 }
 
+// 只有字符总数、没有原文时的估算：约 3 字符 ≈ 1 token（混合内容粗略平均）。
+// prompt 与 response 分开估再相加，保证 5 = P4 + R1 这种可核对。
+function charsEst(promptChars, responseChars) {
+  const p = Math.round((promptChars || 0) / 3);
+  const r = Math.round((responseChars || 0) / 3);
+  return { prompt: p, response: r, total: p + r };
+}
+
 function escapeHtml(s) {
   return String(s == null ? '' : s)
     .replace(/&/g, '&amp;')
@@ -54,7 +62,7 @@ function computeSummary(d) {
   const evs = d.events || [];
   const calls = d.modelCalls || [];
   const ok = calls.filter((c) => c.ok);
-  const estOf = (c) => (c.estTokens != null ? c.estTokens : Math.round(((c.promptChars || 0) + (c.responseChars || 0)) / 3));
+  const estOf = (c) => (c.estTokens != null ? c.estTokens : charsEst(c.promptChars || 0, c.responseChars || 0).total);
   return {
     fileSaves: evs.filter((e) => e.type === 'file_saved').length,
     terminalCommands: evs.filter((e) => e.type === 'terminal_cmd').length,
@@ -83,9 +91,13 @@ function buildReport(data) {
       case 'terminal_cmd':
         detail = `${ev.command || '?'}  → exit ${ev.exitCode == null ? '?' : ev.exitCode}`;
         break;
-      case 'model_call':
-        detail = `${ev.participant || '?'}  model=${ev.model || '?'}  ${ev.ok ? 'OK' : 'FAIL'}  ${ev.latencyMs != null ? Math.round(ev.latencyMs) + 'ms' : '?'}  (估算 ${ev.estTokens || '?'} tok)`;
+      case 'model_call': {
+        const e = (ev.estTokens != null && ev.estPrompt != null)
+          ? { total: ev.estTokens, prompt: ev.estPrompt, response: ev.estResp }
+          : charsEst(ev.promptChars || 0, ev.responseChars || 0);
+        detail = `${ev.participant || '?'}  model=${ev.model || '?'}  ${ev.ok ? 'OK' : 'FAIL'}  ${ev.latencyMs != null ? Math.round(ev.latencyMs) + 'ms' : '?'}  (估算 ${e.total} tok ≈ P${e.prompt}+R${e.response})`;
         break;
+      }
       case 'session_start':
         detail = ev.workspaceRoot || '';
         break;
@@ -112,10 +124,12 @@ function buildReport(data) {
     .join('\n');
 
   const modelRows = (d.modelCalls || []).map((m) => {
-    const est = m.estTokens != null ? m.estTokens : Math.round(((m.promptChars || 0) + (m.responseChars || 0)) / 3);
+    const e = (m.estTokens != null && m.estPrompt != null)
+      ? { total: m.estTokens, prompt: m.estPrompt, response: m.estResp }
+      : charsEst(m.promptChars || 0, m.responseChars || 0);
     return `<tr><td>${escapeHtml(m.participant || '?')}</td><td>${escapeHtml(m.model || '?')}</td>` +
       `<td>${m.ok ? '✅' : '❌'}</td><td>${m.latencyMs != null ? Math.round(m.latencyMs) + 'ms' : '?'}</td>` +
-      `<td>${m.promptChars || 0}</td><td>${m.responseChars || 0}</td><td>${est} *</td></tr>`;
+      `<td>${m.promptChars || 0}</td><td>${m.responseChars || 0}</td><td>${e.total} * (≈P${e.prompt}+R${e.response})</td></tr>`;
   }).join('\n');
 
   const notes = (d.notes || []).map((n) => `<li>${escapeHtml(n)}</li>`).join('\n');
@@ -131,7 +145,7 @@ function buildReport(data) {
 <tr><th>自研调用估算 token 合计 *</th><td>${S.modelCallEstTokens || 0}</td></tr>
 <tr><th>会话原文估算 token *</th><td>${S.transcriptEstTokens != null ? S.transcriptEstTokens : '（未抓到会话原文）'}</td></tr>
 </table>
-<p class="est">* 估算值。原生对话的真实 token/成本无法从扩展 API 取得（厂商 chat 不开放），见下方黄色限制说明。</p>`;
+<p class="est">* 估算值，规则：有原文(会话原文/参与者文本)→CJK 1字≈1 token、ASCII 4字≈1 token；仅字符数(自研调用)→3字符≈1 token(P/R 分开估后相加)。原生对话真实 token/成本无法从扩展 API 取得，见下方黄色限制说明。</p>`;
 
   return `<!DOCTYPE html>
 <html lang="zh">
@@ -181,18 +195,18 @@ ${rows ? `<table><tr><th>相对时间</th><th>事件</th><th>详情</th></tr>${r
 ${d.stats && Object.keys(d.stats.savesByExt || {}).length ? `<details><summary>按扩展名统计的文件保存次数</summary><table><tr><th>扩展名</th><th>次数</th></tr>${saveRows}</table></details>` : ''}
 
 <h2>自研参与者模型调用（实测）</h2>
-${modelRows ? `<table><tr><th>参与者</th><th>模型</th><th>结果</th><th>耗时</th><th>prompt 字符</th><th>响应字符</th><th>估算 token *</th></tr>${modelRows}</table><p class="est">* token 为字符估算。将来若拿到模型 usage（我们自己的参与者走 Copilot 模型管道时），将替换为真实值并注明来源。</p>` : '<p>(本次会话没有自研参与者发起过模型调用——用 @probe/@asb-runbook 等自研参与者并在录制期间使用，这里才会有数据。)</p>'}
+${modelRows ? `<table><tr><th>参与者</th><th>模型</th><th>结果</th><th>耗时</th><th>prompt 字符</th><th>响应字符</th><th>估算 token *</th></tr>${modelRows}</table><p class="est">* token 为字符估算（规则见"本次会话汇总"下方注释）。将来若拿到厂商 usage（chat 模型管道开放时），将替换为真实值并注明来源。</p>` : '<p>(本次会话没有自研参与者发起过模型调用——用 @probe/@asb-runbook 等自研参与者并在录制期间使用，这里才会有数据。)</p>'}
 
 <h2>会话原文快照</h2>
 ${d.transcript && d.transcript.text ? `<details open><summary>${escapeHtml(d.transcript.source || '?')} · ${(d.transcript.text || '').length} 字符 · 估算 ${estimateTokens(d.transcript.text)} token *</summary><pre>${escapeHtml(d.transcript.text)}</pre></details>` : '<p>未能自动抓取会话原文。手动方式：在 Chat 面板该会话的菜单(⋯)里选 <b>Export Conversation</b> 导出，再把内容存成文件——后续版本支持导入。</p>'}
 
 <h2>过程说明 / 已知局限</h2>
 <ul>
-<li>模型内部思维链、逐工具调用的输入输出：<b>不可得</b>（Copilot 不提供，任何扩展都拿不到）。</li>
+<li>模型内部思维链、逐工具调用的输入输出：<b>不可得</b>（厂商 chat 不提供，任何扩展都拿不到）。</li>
 <li>agent mode 的步骤与 checkpoints 只在界面上可见，暂无程序化出口——本版本未采集。</li>
-<li>auto 模型实际路由到哪个模型：对原生 Copilot 对话不可知；仅当使用自研参与者时可记录下拉框当前选择。</li>
+<li>auto 模型实际路由到哪个模型：对原生 chat 对话不可知；仅当使用自研参与者时可记录下拉框当前选择。</li>
 <li>文件保存/终端命令事件：依赖 VS Code 事件与终端 Shell Integration，未接入的终端会话不会被记录。</li>
-<li>估算公式：CJK 每字 ~1 token，ASCII ~4 字符/token。</li>
+<li>估算规则：①有原文(会话原文/参与者文本)：CJK 每字≈1 token、ASCII 4字符≈1 token、其他字符按 2字符≈1 token；②仅有字符数(自研调用)：约 3字符≈1 token(P/R 分开估后相加)。所有估算标 *。</li>
 ${notes ? `<li>其他说明：</li>${notes}` : ''}
 </ul>
 
@@ -228,4 +242,4 @@ function buildJsonReport(data) {
   }, null, 2);
 }
 
-module.exports = { buildReport, buildJsonReport, estimateTokens, computeSummary, escapeHtml, fmtTime, fmtDur };
+module.exports = { buildReport, buildJsonReport, estimateTokens, charsEst, computeSummary, escapeHtml, fmtTime, fmtDur };

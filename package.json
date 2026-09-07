@@ -2,7 +2,7 @@
   "name": "vsc-chat-tools",
   "displayName": "VSC Chat Toolkit",
   "description": "围绕 VS Code Chat 的内部工具包：模型访问探测(@probe)、本地 runbook 检索(@asb-runbook)、会话轨迹记录器(VSC Chat Trail)。纯本地、无 API key、无构建。",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "publisher": "local-dev",
   "engines": {
     "vscode": "^1.100.0"
