@@ -97,5 +97,5 @@ A: Measured or explicitly estimated only: recording duration, file-save count, t
 - [x] v0.2: Recording + git diff + transcript snapshot + task tags + session totals + HTML/JSON artifacts
 - [x] v0.3: Removed the validation participants @probe / @asb-runbook; narrowed to a pure Trail tool
 - [x] v0.4: Ambient effect signals — text-edit stats, terminal run duration, commits during session, active-file / window-focus events
-- [ ] Cross-session aggregation analysis: per task-tag/skill statistics (avg duration, success proxies, change size)
+- [ ] (Backlog, not needed now) Cross-session aggregation analysis by task tag — revisit only if multi-session comparison becomes a goal
 - [ ] (Future) Register a model-calling custom participant (e.g. @asb-review) that reports measured data via `trail.logModelCall`

@@ -24,6 +24,8 @@ Story analysis, code refactor, unit-test generation).
 | D2 | **No pilot with a single tool (former "Phase 4").** Dropped together with D1 — there is nothing to validate end-to-end without usage data. | — |
 | D3 | **Efficiency is measured with time + effect proxies** that the extension API can observe reliably: text edits kept, terminal runs (time, exit code), commits, and activity traces. | These become the new report "efficiency" surface. |
 | D4 | The only token-ish figure kept is the **existing coarse whole-session estimate** from the captured transcript (char-based, labeled `*`). It is optional, clearly marked, and never attributed to a specific tool. | No new token math anywhere. |
+| D5 | **No cross-session aggregation (former "Phase 3") for now.** Aggregation means merging many sessions' reports for tool-vs-tool comparison; it is not the current goal. | Stays a backlog idea only. If it ever becomes needed, it requires the `<tool>:<task>` tag convention first — see Backlog. |
+| D6 | **No rollout/validation phase (former "Phase 4") either.** Use the recorder in real work first; revisit only if real sessions show a clear need. | Nothing to build. |
 
 ## 3. Honest boundaries (why we measure what we measure)
 
@@ -80,11 +82,17 @@ from the tool's backend + admin approval, not from this extension.
 - Measuring terminal output volume or agent inner tool calls (API does not expose).
 - Cross-session aggregation dashboards are **deferred** (still a future idea below).
 
-## 6. Future ideas (deferred, not committed)
+## 6. Backlog (not committed — revisit when there is a real need)
 
-- Cross-session aggregation by task tag / skill (avg duration, success proxies, change
-  size). Data model already supports it (JSON sidecar + JSONL).
-- Revisit usage import (former Phase 1 contract) only if a tool team exports real usage.
+- **Cross-session aggregation** (by task tag, per earlier plan): merge many sessions'
+  reports and compare (avg duration, success proxies, change size). Explicitly **not
+  needed now** (D5). If it ever becomes needed, adopt the `<tool>:<task>` tag convention
+  (e.g. `review:PR-1234`, `utest:STORY-567`) so sessions can be attributed per tool
+  without any cooperation from the tool teams.
+- Revisit usage import (former Phase 1 contract) only if a tool team exports real usage
+  or admin grants org-level Copilot Usage Metrics access (per-user/per-day granularity).
+- Participant-level measured data: only if an internal tool team is willing to report
+  through `trail.logModelCall` (then the "custom model calls" table gets real data).
 - Session "accept/reject" signals for review tools (needs editor-action heuristics;
   research first).
 
