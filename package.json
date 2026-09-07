@@ -30,7 +30,7 @@
       },
       {
         "command": "vscChatTrail.finish",
-        "title": "VSC Chat Trail: ■ Stop session and export HTML report"
+        "title": "VSC Chat Trail: ■ Stop session and export artifact"
       }
     ]
   }

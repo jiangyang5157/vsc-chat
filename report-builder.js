@@ -218,7 +218,7 @@ ${notes ? `<li>Other notes:</li>${notes}` : ''}
 </html>`;
 }
 
-// JSON sidecar: same data as the HTML report, for future scripts doing session/skill/
+// JSON sidecar: same data as the artifact, for future scripts doing session/skill/
 // workflow-level aggregation.
 function buildJsonReport(data) {
   return JSON.stringify({

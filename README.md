@@ -52,13 +52,13 @@ vsc-chat/
     per-task/per-skill aggregation analysis)
 3. Work normally: open chat / agent, have it change code, run tests… events are recorded
    automatically; nothing else to do
-4. Ctrl+Shift+P → VSC Chat Trail: ■ Stop session and export HTML report
+4. Ctrl+Shift+P → VSC Chat Trail: ■ Stop session and export artifact
    → the audit report opens in your browser
 ```
 
 Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / commands / changed files / estimated tokens) → AI Changes Summary (git) → Timeline → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations.
 
-Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the HTML report, for future scripted session/skill aggregation.
+Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the artifact, for future scripted session/skill aggregation.
 
 ## Honest boundaries (why some data is missing)
 

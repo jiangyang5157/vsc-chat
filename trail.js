@@ -39,12 +39,12 @@ async function runGit(args, cwd) {
 function registerTrail(context, out) {
   const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusItem.command = 'vscChatTrail.finish';
-  statusItem.tooltip = 'VSC Chat Trail: Stop session and export HTML report';
+  statusItem.tooltip = 'VSC Chat Trail: Stop session and export artifact';
   context.subscriptions.push(statusItem);
 
   const startCmd = vscode.commands.registerCommand('vscChatTrail.start', async () => {
     if (activeRecorder) {
-      vscode.window.showInformationMessage(`VSC Chat Trail: already recording (session ${activeRecorder.id}). Run "VSC Chat Trail: ■ Stop session and export HTML report" or click the status bar item to finish.`);
+      vscode.window.showInformationMessage(`VSC Chat Trail: already recording (session ${activeRecorder.id}). Run "VSC Chat Trail: ■ Stop session and export artifact" or click the status bar item to finish.`);
       return;
     }
     const tag = await vscode.window.showInputBox({
@@ -56,7 +56,7 @@ function registerTrail(context, out) {
     activeRecorder = rec;
     statusItem.text = '$(record-keys) VSC Chat Trail recording…';
     statusItem.show();
-    vscode.window.showInformationMessage(`VSC Chat Trail: recording started (session ${rec.id}). Run "VSC Chat Trail: ■ Stop session and export HTML report" after the AI collaboration.`);
+    vscode.window.showInformationMessage(`VSC Chat Trail: recording started (session ${rec.id}). Run "VSC Chat Trail: ■ Stop session and export artifact" after the AI collaboration.`);
   });
 
   const finishCmd = vscode.commands.registerCommand('vscChatTrail.finish', async () => {
