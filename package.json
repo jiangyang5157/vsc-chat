@@ -53,11 +53,11 @@
     "commands": [
       {
         "command": "vscChat.start",
-        "title": "VSC Chat Trail: ▶ 开始记录会话"
+        "title": "VSC Chat Trail: ▶ Start session"
       },
       {
         "command": "vscChat.finish",
-        "title": "VSC Chat Trail: ■ 结束并导出 HTML 审计报告"
+        "title": "VSC Chat Trail: ■ Stop session and export HTML report"
       }
     ]
   }

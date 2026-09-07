@@ -61,10 +61,10 @@ vsc-chat/
 
 ```text
 1. 打开工作区（必须打开文件夹，git 才有效）
-2. Ctrl+Shift+P → VSC Chat Trail: ▶ 开始记录会话
+2. Ctrl+Shift+P → VSC Chat Trail: ▶ Start session
    （会问一个可选"任务标签"，如 STORY-1234 / review / 修bug —— 为以后按任务/技能聚合分析留的）
 3. 正常干活：开 chat / agent 让它改代码、跑测试、用 @probe 等自研参与者……
-4. Ctrl+Shift+P → VSC Chat Trail: ■ 结束并导出 HTML 审计报告 → 浏览器自动打开
+4. Ctrl+Shift+P → VSC Chat Trail: ■ Stop session and export HTML report → 浏览器自动打开
 ```
 
 报告章节：会话元信息（含任务标签）→ **本次会话汇总**（时长/保存数/命令数/变更文件数/自研调用数+平均耗时/估算 token 合计）→ AI 变更摘要(git) → 时间线 → 模型调用表 → 会话原文快照 → 已知局限。

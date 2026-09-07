@@ -32,12 +32,12 @@ async function runGit(args, cwd) {
 function registerTrail(context, out) {
   const statusItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 90);
   statusItem.command = 'vscChat.finish';
-  statusItem.tooltip = 'VSC Chat Trail：结束并导出审计报告';
+  statusItem.tooltip = 'VSC Chat Trail：Stop session and export HTML report';
   context.subscriptions.push(statusItem);
 
   const startCmd = vscode.commands.registerCommand('vscChat.start', async () => {
     if (activeRecorder) {
-      vscode.window.showInformationMessage('VSC Chat Trail：已经在录制中（会话 ' + activeRecorder.id + '）。要结束请运行 “VSC Chat Trail: ■ 结束并导出” 或点状态栏。');
+      vscode.window.showInformationMessage('VSC Chat Trail：已经在录制中（会话 ' + activeRecorder.id + '）。要结束请运行 “VSC Chat Trail: ■ Stop session and export HTML report” 或点状态栏。');
       return;
     }
     const tag = await vscode.window.showInputBox({
@@ -49,12 +49,12 @@ function registerTrail(context, out) {
     activeRecorder = rec;
     statusItem.text = '$(record-keys) VSC Chat Trail 录制中…';
     statusItem.show();
-    vscode.window.showInformationMessage(`VSC Chat Trail：开始录制（会话 ${rec.id}）。做完 AI 协作后运行 “VSC Chat Trail: ■ 结束并导出 HTML 审计报告”。`);
+    vscode.window.showInformationMessage(`VSC Chat Trail：开始录制（会话 ${rec.id}）。做完 AI 协作后运行 “VSC Chat Trail: ■ Stop session and export HTML report”。`);
   });
 
   const finishCmd = vscode.commands.registerCommand('vscChat.finish', async () => {
     if (!activeRecorder) {
-      vscode.window.showWarningMessage('VSC Chat Trail：当前没有正在录制的会话。请先运行 “VSC Chat Trail: ▶ 开始记录会话”。');
+      vscode.window.showWarningMessage('VSC Chat Trail：当前没有正在录制的会话。请先运行 “VSC Chat Trail: ▶ Start session”。');
       return;
     }
     const rec = activeRecorder;
