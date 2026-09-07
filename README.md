@@ -1,114 +1,95 @@
-# VSC Chat Toolkit
+# VSC Chat Trail
 
-围绕 **VS Code 里的 chat 窗口** 的最小内部工具包。概念上它服务的是"chat"，而不是某个特定厂商：只要 chat 会话能把模型(`request.model`)交给扩展，工具就成立（你公司当前用的厂商 chat 是 GitHub Copilot，纯属事实背景）。
+A VS Code extension that records one **AI collaboration session** in the chat/agent window like a "video recorder" and, when you stop it, exports an **HTML audit report + JSON** — so you can audit and review what that AI collaboration actually changed, how long it took, and what events happened.
 
-纯本地、无构建步骤、不需要任何 API key。
+- **Local-only**: data never leaves your workspace, nothing is uploaded
+- **No API key**; the extension itself **never calls a model**
+- **No build step** (pure JavaScript)
 
-| 成员 | 作用 | 是否需要模型 |
-|---|---|---|
-| `@probe` | 探测：当前 chat 会话是否把模型(`request.model`)交给你的扩展 | 会尝试调用一次（仅测试，回复 PONG） |
-| `@asb-runbook` | 在你本地 markdown 文档里检索团队 runbook（关键词打分） | 不需要（纯程序化） |
-| **VSC Chat Trail** | 会话轨迹记录器：录制一次 AI 协作会话 → 导出 HTML 审计报告 | 不需要（只记录，不生成） |
+> History: v0.2 shipped two experimental chat participants (`@probe`, which probed model access, and `@asb-runbook`, a local runbook search). Both checks passed and were not part of the daily workflow, so v0.3 removed them; see git history if you need to replicate them.
 
-## 文件结构
+## What is recorded (all "world changes" the extension API can see)
+
+| Category | Content |
+|---|---|
+| git | Branch/HEAD at start and end, the full diff since the start HEAD (stat + file list), untracked new files |
+| Timeline | File saves, terminal commands (needs Shell Integration), model calls reported by custom participants (measured latency/chars) |
+| Transcript | Tries the official Export Conversation command at the end to capture the current session text |
+
+**We never fabricate data**: vendor chat (e.g. GitHub Copilot) does not expose tokens/cache hits/cost/chain-of-thought to extensions, so token figures in the report are always character-based estimates marked with `*`.
+
+## File structure
 
 ```
 vsc-chat/
-├── package.json          # 扩展清单：两个参与者 + Trail 命令 + 设置(vscChat.*)
-├── extension.js          # 参与者逻辑（@probe / @asb-runbook）
-├── trail.js              # 会话轨迹记录器（录制 + git 差异 + 会话原文快照 + 任务标签）
-├── report-builder.js     # HTML/JSON 报告生成（纯函数，可单测）
-├── .vscode/launch.json   # F5 调试配置
-├── docs/runbooks/        # 示例文档（占位内容，替换成真实的团队文档）
+├── package.json          # Extension manifest: Trail commands + setting (vscChatTrail.outputDir)
+├── extension.js          # Activation entry point (only registers Trail)
+├── trail.js              # Recorder: event listeners + git diff + transcript snapshot + export
+├── report-builder.js     # HTML/JSON report generation (pure functions, no vscode dependency, testable standalone)
+├── .vscode/launch.json   # F5 debug configuration
 └── README.md
 ```
 
-## 前置条件
+## Prerequisites
 
 1. VS Code ≥ 1.100
-2. 厂商 chat 扩展已安装并登录（当前即 GitHub Copilot Chat），模型下拉框可选模型
-3. 不需要 Node / 编译
+2. A vendor chat extension installed and signed in (currently GitHub Copilot Chat)
+3. (Recommended) The workspace is inside a git repository — git diff and changed-file data depend on it
+4. No Node / build tools needed
 
-## 三步跑起来
+## Getting started
 
-1. VS Code **打开本文件夹**（`vsc-chat`）
-2. 按 **F5** → 弹出 `[Extension Development Host]` 窗口，**所有操作都在新窗口做**
-3. 新窗口里打开 Chat（`Ctrl+Alt+I` / `Cmd+Option+I`）→ 输入 `@`，列表里应有 **probe** 和 **asb-runbook**
+1. Open this folder (`vsc-chat`) in VS Code
+2. Press **F5** → an `[Extension Development Host]` window opens — do everything in that new window
+3. In the new window run `Ctrl+Shift+P` → **VSC Chat Trail: ▶ Start session**
 
-## 用 @probe
-
-发送 `@probe 测试一下` → 得到探测报告：
-
-| 结论 | 含义 | 下一步 |
-|---|---|---|
-| ✅ PASS | 你的扩展能借 chat 下拉框的模型 | 可以设计 @asb-review / @asb-story 等会调模型的参与者 |
-| ⚠️ PARTIAL | 只拿到模型列表，没拿到 request.model | 升级 VS Code / chat 扩展后重测 |
-| ❌ FAIL | chat 不给第三方扩展模型 | 只能做纯程序化工具；把报错发给管理员 |
-
-详细日志：`View → Output` → 下拉选 **VSC Chat Toolkit**。
-
-## 用 @asb-runbook
-
-```
-@asb-runbook 本地怎么跑 iOS 的单元测试
-```
-
-检索目录默认 `docs/runbooks/`（可设置 `vscChat.runbookDirs`，支持绝对路径）。纯本地扫描，不上传任何内容。
-
-## VSC Chat Trail —— 会话轨迹记录器（v0.2）
-
-像"录像机"一样记录一次 AI 协作会话的可观测事实，结束导出 HTML 审计报告 + JSON。
+## Usage
 
 ```text
-1. 打开工作区（必须打开文件夹，git 才有效）
+1. Open a workspace (a git repository is recommended)
 2. Ctrl+Shift+P → VSC Chat Trail: ▶ Start session
-   （会问一个可选"任务标签"，如 STORY-1234 / review / 修bug —— 为以后按任务/技能聚合分析留的）
-3. 正常干活：开 chat / agent 让它改代码、跑测试、用 @probe 等自研参与者……
-4. Ctrl+Shift+P → VSC Chat Trail: ■ Stop session and export HTML report → 浏览器自动打开
+   (optionally enter a task tag, e.g. STORY-1234 / review / fix-bug — reserved for future
+    per-task/per-skill aggregation analysis)
+3. Work normally: open chat / agent, have it change code, run tests… events are recorded
+   automatically; nothing else to do
+4. Ctrl+Shift+P → VSC Chat Trail: ■ Stop session and export HTML report
+   → the audit report opens in your browser
 ```
 
-报告章节：会话元信息（含任务标签）→ **本次会话汇总**（时长/保存数/命令数/变更文件数/自研调用数+平均耗时/估算 token 合计）→ AI 变更摘要(git) → 时间线 → 模型调用表 → 会话原文快照 → 已知局限。
+Report sections: Session metadata (incl. task tag) → **Session Totals** (duration / saves / commands / changed files / estimated tokens) → AI Changes Summary (git) → Timeline → Model-call table (only when custom participants report) → Transcript snapshot → Known limitations.
 
-数据落在 `<工作区>/.vsc-chat-trail/`：`sessions/*.jsonl` + `reports/*.html|.json`（已 gitignore）。
+Data is written to `<workspace>/.vsc-chat-trail/`: `sessions/*.jsonl` (raw event stream) + `reports/*.html|.json` (gitignored). The JSON carries the same data as the HTML report, for future scripted session/skill aggregation.
 
-## 诚实边界（为什么有的数据没有）
+## Honest boundaries (why some data is missing)
 
-- **模型内部思维链、agent 每步工具调用明细**：厂商 chat 不向任何扩展暴露，做不到。
-- **原生对话的真实 token / 缓存命中 / 成本**：扩展 API 无 usage 字段。唯一官方路径是组织级 Copilot metrics API（需管理员开）——那也只能到"用户/天"粒度，到不了"某个会话"。
-- **auto 实际路由到哪个模型**：对原生对话不可知；只有自研参与者能记录下拉框当前选择。
-- 因此报告里：**能测的都是实测**（耗时、字符、git、事件）；**token 一律字符估算并标 `*`**。审计材料区分事实与推断是底线。
+- **Model chain-of-thought and per-tool inputs/outputs**: vendor chat does not expose them to any extension.
+- **Real tokens / cache hits / cost of native conversations**: the extension API has no usage field. The only official path is the org-level Copilot metrics API (requires admin) — and that only reaches "per user per day", not per session.
+- **Which concrete model "auto" routes to**: unknowable for native chat; only custom participants can record the currently selected dropdown model.
+- So the report only claims what it measured (latency, chars, git, events); all tokens are character estimates marked `*`. Separating fact from inference is the baseline for audit material.
 
 ## FAQ
 
-**Q：probe 是什么东西？是个模型吗？**
-A：不是模型。它是这个扩展注册的一个"测试座席"（chat 参与者）。你 `@probe` 它时，它只是做一件事：把"只回复一个词 PONG"发给**当前 chat 会话下拉框选中的那个模型**，然后报告"扩展到底能不能借到模型"。PASS 的含义是：以后我们自研的任何参与者都能用同样的通道调用模型，且不需要 API key。
+**Q: Does this extension call models or consume my chat quota?**
+A: No. VSC Chat Trail only listens to events, captures git diffs, and tries the official export command for a transcript snapshot. It never initiates a model call itself.
 
-**Q：测试 Trail 时为什么让我"用一次 @probe"？什么时候用？**
-A：@probe 不是工作流的一部分，它只是测试用的**数据发生器**，用来验证"自研参与者模型调用"这条数据链路能通（事件 → 时间线 → 汇总表）。一次就够验证管道。时机随意，**只要在 ▶ 开始 和 ■ 结束 之间**（同一窗口）即可，调用会被自动打时间戳；在开始之前或结束之后用则不会被记录。改代码、agent 跑任务不需要 @probe——那些靠 git/文件/终端事件自动记录。将来真实的 @asb-review 等参与者被任务自然用到时，走的是同一个记录钩子，那才是"自研参与者数据"的常态来源。
+**Q: Why is the "Model calls by custom participants" table empty?**
+A: That table only records model calls that a custom participant reports through `trail.logModelCall`. This extension currently registers no model-calling participants (the early validation participants @probe / @asb-runbook were removed in v0.3). If you only use the native chat window, this table is legitimately empty — vendor chat does not expose native conversation usage to extensions. Not a bug; a boundary.
 
-**Q：上次报告里 token 是 "?*"，没有数据？**
-A：两个原因：① v0.1 的 `model_call` 没算估算值——v0.2 已修（无真实 usage 时按约 3 字符≈1 token 粗估，报告标 `*`）；② 只有**自研参与者在你录制期间被实际使用**（如 @probe）才会有记录——你如果全程只用原生 chat 窗口，这一节本来就该是空的，因为原生对话的用量厂商不开放给扩展。这不是 bug，是边界。
+**Q: Why does the report show `?*` tokens / no token data?**
+A: Tokens are always estimates marked `*`. They only exist when there is text to estimate (a captured transcript) or a custom participant reported a call.
 
-**Q：真实场景中，能算"某个会话一共"的数据吗？**
-A：能算与不能算要分开：
-- 能算（v0.2 新增"本次会话汇总"表，全部为实测或明确估算）：录制时长、文件保存数、终端命令数、git 变更文件数、自研参与者调用次数/成功率/平均耗时、会话原文长度与估算 token、自研调用估算 token 合计。
-- 算不了：原生对话的真实 token/成本/缓存命中（无 API 出口；组织级 metrics API 是唯一官方路径，需管理员，粒度到不了单会话）。
+**Q: What per-session totals can I actually rely on?**
+A: Measured or explicitly estimated only: recording duration, file-save count, terminal-command count, git changed-file count, transcript length and estimated tokens. Not available: real tokens/cost/cache hits of native conversations (no API outlet; org-level metrics API is the only official path, requires admin, and cannot reach single-session granularity).
 
-**Q：代码里的 STOPWORDS 是什么意思？**
-A："停用词表"。runbook 检索时把用户问题拆成关键词，但像 `and/the/的/了/怎么/如何` 这类词对"找出哪份文档"没帮助，还会制造噪音，所以先滤掉。目前已知局限：中文没有空格分词，长句如"本地怎么跑iOS的单元测试"会切出整段而不是词（日志里 `tokens=[本地怎么跑,ios,的单元测试]` 就是这么来的），中文检索质量待优化——属于路线图里的待办。
+## Checklist to send to your admin
 
-## 要发给管理员的确认清单
+1. (Optional, for real usage data) Can the org-level **Copilot metrics API** read permission be granted?
+2. (Future, if you register model-calling custom participants) Does the Enterprise policy allow third-party chat extensions? Who controls the model dropdown and what does "auto" actually route to?
+3. (Future, if you add tool points to the agent) Is there an MCP tool whitelist policy?
 
-1. Enterprise 策略是否允许**第三方 chat 扩展**（policy：Chat extensions / Copilot extensions）？
-2. 是否有 MCP 工具白名单策略（影响以后给 agent 加"工具点"）？
-3. chat 模型下拉框由谁控制、auto 实际路由哪些模型？
-4. （可选，为了真实用量数据）能否开组织级 **Copilot metrics API** 的读取权限？
+## Roadmap
 
-## 路线图
-
-- [x] @probe 模型访问探测（你已测出 PASS）
-- [x] @asb-runbook 纯本地检索（中文分词待优化）
-- [x] VSC Chat Trail v0.2：录制 + git 差异 + 会话原文快照 + 任务标签 + 会话汇总 + HTML/JSON 报告
-- [ ] @asb-runbook 加"用模型总结"模式 + 修中文分词
-- [ ] 加"工具点"(language model tool)：agent 自动调用你的函数（get-ticket / scan-pii / 跑银行校验）
-- [ ] Trail 聚合分析：按任务标签/技能统计（平均耗时、成功率、改动量、估算 token）
+- [x] v0.2: Recording + git diff + transcript snapshot + task tags + session totals + HTML/JSON reports
+- [x] v0.3: Removed the validation participants @probe / @asb-runbook; narrowed to a pure Trail tool
+- [ ] Trail aggregation analysis: per task-tag/skill statistics (avg duration, success rate, change size, estimated tokens)
+- [ ] (Future) Register a model-calling custom participant (e.g. @asb-review) that reports measured data via `trail.logModelCall`
